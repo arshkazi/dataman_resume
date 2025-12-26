@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        body { margin: 0; background: #020202; color: white; font-family: 'Courier New', Courier, monospace; display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+        #game-container { width: 50vw; height: 100vh; background: #000; border-right: 3px solid #ffff00; }
+        #info-sidebar { width: 50vw; height: 100vh; padding: 40px; background: #050505; display: flex; flex-direction: column; box-sizing: border-box; overflow-y: auto; }
+        
+        /* Mode Selection Overlay */
+        #overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+        .menu-btn { background: #111; color: #ffff00; border: 2px solid #ffff00; padding: 20px 40px; margin: 15px; cursor: pointer; font-family: 'Courier New', monospace; font-size: 18px; width: 300px; transition: 0.3s; }
+        .menu-btn:hover { background: #ffff00; color: #000; }
+        
+        h1 { color: #ffff00; margin: 0; font-size: 22px; border-bottom: 2px solid #ffff00; padding-bottom: 5px; }
+        .contact { font-size: 12px; color: #888; margin-top: 5px; }
+        .section-title { font-size: 16px; color: #33ccff; margin-top: 20px; text-transform: uppercase; border-left: 4px solid #33ccff; padding-left: 12px; }
+        .content { font-size: 13px; line-height: 1.5; margin-top: 8px; color: #bbb; white-space: pre-line; min-height: 250px; }
+        #status-display { margin-top: 15px; font-weight: bold; padding: 10px; background: #111; border: 1px solid #333; color: #00ff00; font-size: 14px; }
+        .cursor { display: inline-block; width: 8px; height: 15px; background: #00ff00; animation: blink 0.8s infinite; vertical-align: middle; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+    <div id="overlay">
+        <h2 style="color: #33ccff;">SELECT ACCESS PROTOCOL</h2>
+        <button class="menu-btn" onclick="startGame('playing')">PLAYING MODE<br><span style="font-size: 10px;">Full Challenge / Type Animation</span></button>
+        <button class="menu-btn" onclick="startGame('reading')">READING MODE<br><span style="font-size: 10px;">Free Roam / Instant Text</span></button>
+    </div>
+
+    <div id="game-container"></div>
+    <div id="info-sidebar">
+        <h1 id="side-title">KAZI MOHAMMED ARSH</h1>
+        <div class="contact">arsh.lakers@gmail.com | +91 91671 91639</div>
+        <div id="status-display">
+            STATUS: <span id="mode-text">INITIALIZING</span><br>
+            RECOVERY_SCORE: <span id="score-val">0</span>
+        </div>
+        <div class="section-title" id="node-title">SYSTEM</div>
+        <div id="side-body" class="content">Please select a mode...</div>
+    </div>
+
+<script>
+let gameMode = 'playing'; // Default
+let gameStarted = false;
+
+function startGame(mode) {
+    gameMode = mode;
+    document.getElementById('overlay').style.display = 'none';
+    document.getElementById('mode-text').innerText = mode.toUpperCase() + '_MODE';
+    gameStarted = true;
+    initPhaser();
+}
+
+function initPhaser() {
+    const config = {
+        type: Phaser.AUTO,
+        parent: 'game-container',
+        width: 600, height: 600,
+        physics: { default: 'arcade', arcade: { debug: false } },
+        scene: { preload: preload, create: create, update: update }
+    };
+    new Phaser.Game(config);
+}
+
+let player, ghosts, walls, switchObj, cig, coin, particles, cursors;
+let unlocked = false, currentSpeed = 220, isHunter = false, currentNode = "";
+let score = 0;
+
+function preload() {}
+
+function create() {
+    walls = this.physics.add.staticGroup();
+    const b = (x, y, w, h) => {
+        walls.create(x, y, null).setDisplaySize(w, h).refreshBody();
+        this.add.rectangle(x, y, w, h, 0x111111).setStrokeStyle(1, 0x33ccff, 0.4);
+    };
+
+    // Maze
+    b(300, 5, 600, 10); b(300, 595, 600, 10); b(5, 300, 10, 600); b(595, 300, 10, 600);
+    b(120, 120, 20, 150); b(480, 120, 20, 150); b(120, 480, 20, 150); b(480, 480, 20, 150);
+    b(300, 300, 15, 100);
+
+    switchObj = this.add.container(300, 420);
+    let swBase = this.add.rectangle(0, 0, 16, 24, 0xffffff);
+    let swToggle = this.add.rectangle(0, 5, 8, 10, 0x888888);
+    switchObj.add([swBase, swToggle]);
+    this.physics.add.existing(switchObj);
+
+    player = this.add.container(60, 540);
+    player.add([this.add.circle(0, 0, 15, 0xe0ac69), this.add.circle(-5, -5, 2, 0x000), this.add.circle(5, -5, 2, 0x000), this.add.arc(0, 5, 8, 0, 180, false, 0x000)]);
+    this.physics.add.existing(player);
+    player.body.setCircle(15, -15, -15).setCollideWorldBounds(true);
+
+    ghosts = this.physics.add.group({ collideWorldBounds: true, bounceX: 1, bounceY: 1 });
+    [0x00ff00, 0xff00ff, 0x00ffff].forEach((c, i) => {
+        let g = this.add.container(100 + (i*200), 80);
+        g.add([this.add.rectangle(0, 0, 26, 24, c), this.add.circle(-7, -3, 5, 0xfff), this.add.circle(7, -3, 5, 0xfff)]);
+        g.color = c; ghosts.add(g);
+        g.body.setCircle(18, -18, -18);
+        if(gameMode === 'reading') {
+            g.body.setVelocity(Phaser.Math.Between(-100, 100), Phaser.Math.Between(-100, 100));
+        }
+    });
+
+    this.physics.add.collider(player, walls);
+    this.physics.add.collider(ghosts, walls);
+    this.physics.add.collider(ghosts, ghosts);
+    
+    // Interaction logic based on mode
+    this.physics.add.overlap(player, ghosts, (p, g) => {
+        if (gameMode === 'playing') {
+            if (isHunter) { g.setPosition(300, 80); updateScore(200); }
+            else { player.setPosition(60, 540); typeContent("SECURITY ALERT", "Breach detected. Resetting..."); updateScore(-100); }
+        }
+    });
+    
+    this.physics.add.overlap(player, switchObj, () => {
+        if(!unlocked) { unlocked = true; swToggle.setY(-5); swBase.setStrokeStyle(3, 0x00ff00); updateScore(500); }
+    });
+
+    this.time.addEvent({ delay: 30000, loop: true, callback: spawnCigarette, callbackScope: this });
+    this.time.addEvent({ delay: 45000, loop: true, callback: spawnCoin, callbackScope: this });
+    cursors = this.input.keyboard.createCursorKeys();
+
+    typeContent("SUMMARY", "Junior Data Engineer with strong Python, SQL, and backend engineering experience. MSc AI Distinction graduate from UEL. Specialized in API-driven pipelines and automation.");
+}
+
+function updateScore(amount) {
+    score += amount;
+    if (score < 0) score = 0;
+    document.getElementById('score-val').innerText = score;
+}
+
+function spawnCigarette() {
+    if (cig) cig.destroy();
+    cig = this.add.container(Phaser.Math.Between(150, 450), Phaser.Math.Between(400, 500));
+    cig.add([this.add.rectangle(0, 0, 22, 7, 0xffffff), this.add.rectangle(11, 0, 5, 7, 0xff4400)]);
+    this.physics.add.existing(cig);
+}
+
+function spawnCoin() {
+    if (coin) coin.destroy();
+    let x = Phaser.Math.Between(150, 450); let y = Phaser.Math.Between(100, 200);
+    coin = this.add.circle(x, y, 12, 0xffff00);
+    this.add.text(x-5, y-8, '$', {fontSize:'16px', color:'#000', bold:true});
+    this.physics.add.existing(coin);
+}
+
+let typeInterval;
+function typeContent(title, text) {
+    if (currentNode === title) return;
+    currentNode = title;
+    document.getElementById('node-title').innerText = title;
+    const body = document.getElementById('side-body');
+    
+    if (gameMode === 'reading') {
+        body.innerHTML = text; // Instant text
+        return;
+    }
+
+    body.innerHTML = "";
+    let i = 0; clearInterval(typeInterval);
+    typeInterval = setInterval(() => {
+        if (i < text.length) { body.innerHTML = text.substring(0, i + 1) + '<span class="cursor"></span>'; i++; }
+        else { clearInterval(typeInterval); }
+    }, 10);
+}
+
+function update() {
+    if(!gameStarted) return;
+    player.body.setVelocity(0);
+    if (cursors.left.isDown) player.body.setVelocityX(-currentSpeed);
+    else if (cursors.right.isDown) player.body.setVelocityX(currentSpeed);
+    if (cursors.up.isDown) player.body.setVelocityY(-currentSpeed);
+    else if (cursors.down.isDown) player.body.setVelocityY(currentSpeed);
+
+    if (cig && this.physics.overlap(player, cig)) { cig.destroy(); currentSpeed = 440; this.time.delayedCall(15000, () => currentSpeed = 220); }
+    if (coin && this.physics.overlap(player, coin)) {
+        coin.destroy(); isHunter = true;
+        ghosts.children.iterate(g => g.list[0].setFillStyle(0xffffff));
+        this.time.delayedCall(10000, () => { isHunter = false; ghosts.children.iterate(g => g.list[0].setFillStyle(g.color)); });
+    }
+
+    ghosts.children.iterate(g => {
+        if (gameMode === 'playing') {
+            if (!isHunter) this.physics.moveToObject(g, player, 110);
+            else this.physics.moveToObject(g, player, -70);
+        } else {
+            // Reading Mode: Simple bounce off walls logic (handled by physics)
+            if (g.body.velocity.x === 0) g.body.setVelocityX(Phaser.Math.Between(-100, 100));
+            if (g.body.velocity.y === 0) g.body.setVelocityY(Phaser.Math.Between(-100, 100));
+        }
+    });
+
+    if (unlocked) checkResume();
+}
+
+function checkResume() {
+    if (player.y < 120) typeContent("EDUCATION", "MSc Diploma in Artificial Intelligence\nUniversity of East London (2024–2025)\n• Passed with Distinction\n• ML, Deep Learning, NLP");
+    else if (player.x > 480 && player.y < 300) typeContent("ATHER ENERGY", "Backend Developer (2023–2024)\n• Developed Python/Node.js backend services\n• Optimized SQL Database Queries");
+    else if (player.x > 480 && player.y > 300) typeContent("EXPERIENCE: TCS", "System Administrator (2021–2023)\n• Managed Enterprise IT Servers & Automation");
+    else if (player.x < 120 && player.y > 300) typeContent("CERTIFICATIONS", "• 100 Days of Code: Python Pro\n• Full Stack Web Development");
+    else if (player.x < 120 && player.y < 300) typeContent("UK MANAGEMENT", "Manager – Eyva Lounge, UK (2024–2025)\n• Managed operations and staff training");
+    else if (player.x > 250 && player.x < 350 && player.y < 350) typeContent("INTERESTS", "• Tropical Fish & Iguana Breeder\n• LEGO System Design & Builds\n• Rare Coin Collection");
+}
+</script>
+</body>
+</html>
